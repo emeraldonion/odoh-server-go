@@ -26,9 +26,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io/ioutil"
-	"log"
+	"io"
 	"net/http"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type proxyServer struct {
@@ -37,15 +38,14 @@ type proxyServer struct {
 }
 
 var (
-	errWrongMethod       = fmt.Errorf("Unsupported method")
-	errMissingTargetHost = fmt.Errorf("Missing proxy targethost query parameter")
-	errMissingTargetPath = fmt.Errorf("Missing proxy targetpath query parameter")
-	errEmptyRequestBody  = fmt.Errorf("Missing request body")
+	errWrongMethod       = fmt.Errorf("unsupported method")
+	errMissingTargetHost = fmt.Errorf("missing proxy targethost query parameter")
+	errMissingTargetPath = fmt.Errorf("missing proxy targetpath query parameter")
+	errEmptyRequestBody  = fmt.Errorf("missing request body")
 )
 
 func forwardProxyRequest(client *http.Client, targetName string, targetPath string, body []byte, headerContentType string) (*http.Response, error) {
-	targetURL := "https://" + targetName + targetPath
-	req, err := http.NewRequest("POST", targetURL, bytes.NewReader(body))
+	req, err := http.NewRequest("POST", "https://"+targetName+targetPath, bytes.NewReader(body))
 	if err != nil {
 		log.Println("Failed creating target POST request")
 		return nil, errors.New("failed creating target POST request")
@@ -56,7 +56,9 @@ func forwardProxyRequest(client *http.Client, targetName string, targetPath stri
 }
 
 func (p *proxyServer) proxyQueryHandler(w http.ResponseWriter, r *http.Request) {
-	log.Printf("%s Handling %s\n", r.Method, r.URL.Path)
+	log.Debug("handling proxy request")
+
+	metricProxyQueries.Inc()
 
 	if r.Method != "POST" {
 		p.lastError = errWrongMethod
@@ -81,8 +83,15 @@ func (p *proxyServer) proxyQueryHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	defer r.Body.Close()
-	body, err := ioutil.ReadAll(r.Body)
+	log.Debugf("targethost: %s targetpath: %s", targetName, targetPath)
+
+	defer func(body io.ReadCloser) {
+		err := body.Close()
+		if err != nil {
+			log.Warn(err)
+		}
+	}(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil || len(body) == 0 {
 		p.lastError = errEmptyRequestBody
 		log.Printf(p.lastError.Error())
@@ -92,6 +101,7 @@ func (p *proxyServer) proxyQueryHandler(w http.ResponseWriter, r *http.Request) 
 
 	headerContentType := r.Header.Get("Content-Type")
 
+	metricProxyValidQueries.Inc()
 	response, err := forwardProxyRequest(p.client, targetName, targetPath, body, headerContentType)
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -103,13 +113,22 @@ func (p *proxyServer) proxyQueryHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	defer response.Body.Close()
-	responseBody, err := ioutil.ReadAll(response.Body)
+	defer func(body io.ReadCloser) {
+		err := body.Close()
+		if err != nil {
+			log.Warn(err)
+		}
+	}(response.Body)
+
+	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", headerContentType)
-	w.Write(responseBody)
+	_, err = w.Write(responseBody)
+	if err != nil {
+		log.Warn(err)
+	}
 }

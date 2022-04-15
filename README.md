@@ -1,95 +1,32 @@
-# odoh-server-go
+# odohd
 
-[![Coverage Status](https://coveralls.io/repos/github/cloudflare/odoh-server-go/badge.svg?branch=master)](https://coveralls.io/github/cloudflare/odoh-server-go?branch=master)
+[Oblivious DoH Server](https://tools.ietf.org/html/draft-pauly-dprive-oblivious-doh) based on [Cloudflare's odoh-server-go](https://github.com/cloudflare/odoh-server-go)
 
-[Oblivious DoH Server](https://tools.ietf.org/html/draft-pauly-dprive-oblivious-doh)
+![Coverage Badge](coverage_badge.png)
+[![Go Report](https://goreportcard.com/badge/github.com/emeraldonion/odohd?style=for-the-badge)](https://goreportcard.com/report/github.com/emeraldonion/odohd)
+[![License](https://img.shields.io/github/license/emeraldonion/odohd?style=for-the-badge)](https://raw.githubusercontent.com/emeraldonion/odohd/main/LICENSE)
+[![Release](https://img.shields.io/github/v/release/emeraldonion/odohd?style=for-the-badge)](https://github.com/emeraldonion/odohd/releases)
 
-# Preconfigured Deployments
+This fork includes changes for a server suited to Emerald Onion's production deployment.
 
-[![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy)
-[![deploy to Scalingo](https://cdn.scalingo.com/deploy/button.svg)](https://my.scalingo.com/deploy)
-
-# Local development
-
-To deploy the server locally, first acquire a TLS certificate using [mkcert](https://github.com/FiloSottile/mkcert) as follows:
-
-~~~
-$ mkcert -key-file key.pem -cert-file cert.pem 127.0.0.1 localhost
-~~~
-
-Then build and run the server as follows:
-
-~~~
-$ make all
-$ CERT=cert.pem KEY=key.pem PORT=4567 ./odoh-server
-~~~
-
-You may then run the [corresponding client](https://github.com/cloudflare/odoh-client-go) as follows:
-
-~~~
-$ ./odoh-client odoh --proxy localhost:4567 --target odoh.cloudflare-dns.com --domain cloudflare.com
-;; opcode: QUERY, status: NOERROR, id: 14306
-;; flags: qr rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 0, ADDITIONAL: 0
-
-;; QUESTION SECTION:
-;cloudflare.com.	IN	 AAAA
-
-;; ANSWER SECTION:
-cloudflare.com.	271	IN	AAAA	2606:4700::6810:84e5
-cloudflare.com.	271	IN	AAAA	2606:4700::6810:85e5
-~~~
-
-# Usage
-
-To deploy, run:
-
-~~~
-$ gcloud app deploy proxy.yaml
-...
-$ gcloud app deploy target.yaml
-...
-~~~
-
-To check on its status, run:
-
-~~~
-$ gcloud app browse
-~~~
-
-To stream logs when deployed, run
-
-~~~
-$ gcloud app logs tail -s default
-~~~
-
-To run locally build and run the project using
-
-```shell
-go build
-PORT=8080 ./odoh-server-go
-```
-
-By default, the proxy listens on `/proxy` and the target listens on `/dns-query`.
-
-## Reverse proxy
-
-You need to deploy a reverse proxy with a valid TLS server certificate
-for clients to be able to authenticate the target or proxy.
-
-The simplest option for this is using [Caddy](https://caddyserver.com).
-Caddy will automatically provision a TLS certificate using ACME from [Let's Encrypt](https://letsencrypt.org).
-
-For instance:
+## Usage:
 
 ```
-caddy reverse-proxy --from https://odoh.example.net:443 --to 127.0.0.1:8080
-```
+Usage:
+  odohd [OPTIONS]
 
-Alternatively, use a Caddyfile similar to:
+Application Options:
+  -l, --listen=           Address to listen on (default: localhost:8080)
+  -m, --metrics-listen=   Address to listen metrics server on (default: localhost:8081)
+  -r, --resolver=         Target DNS resolver (default: 127.0.0.1:53)
+  -t, --no-tls            Disable TLS
+  -c, --cert=             TLS certificate file
+  -k, --key=              TLS key file
+      --resolver-timeout= Resolver timeout (seconds) (default: 2.5)
+      --proxy-timeout=    Proxy timeout (seconds) (default: 2.5)
+  -v, --verbose           Enable verbose logging
+  -V, --version           Show version and exit
 
+Help Options:
+  -h, --help              Show this help message
 ```
-odoh.example.net
-
-reverse_proxy localhost:8080
-```
-and run `caddy start`.

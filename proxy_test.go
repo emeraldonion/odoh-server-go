@@ -24,7 +24,6 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -32,29 +31,13 @@ import (
 	"testing"
 )
 
-type testTarget struct {
-	expectedStatusCode int
-}
-
-func (t testTarget) handleRequest(w http.ResponseWriter, r *http.Request) {
-	body, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-		return
-	}
-
-	headerContentType := r.Header.Get("Content-Type")
-	w.Header().Set("Content-Type", headerContentType)
-	w.Write(body)
-}
-
 func TestProxyMethod(t *testing.T) {
 	proxy := proxyServer{}
 
 	handler := http.HandlerFunc(proxy.proxyQueryHandler)
 
 	fakeQueryBody := strings.NewReader("test body")
-	fakeQueryURL := queryEndpoint
+	fakeQueryURL := "/dns-query"
 	request, err := http.NewRequest("GET", fakeQueryURL, fakeQueryBody)
 	if err != nil {
 		t.Fatal(err)
@@ -64,10 +47,10 @@ func TestProxyMethod(t *testing.T) {
 	handler.ServeHTTP(rr, request)
 
 	if status := rr.Code; status != http.StatusBadRequest {
-		t.Fatal(fmt.Errorf("Failed when sent an invalid request method. Expected %d, got %d", http.StatusBadRequest, status))
+		t.Fatal(fmt.Errorf("failed when sent an invalid request method. Expected %d, got %d", http.StatusBadRequest, status))
 	}
 	if proxy.lastError != errWrongMethod {
-		t.Fatal(fmt.Errorf("Incorrect error. Expected %s", errWrongMethod.Error()))
+		t.Fatal(fmt.Errorf("incorrect error, expected %s", errWrongMethod.Error()))
 	}
 }
 
@@ -79,13 +62,13 @@ func TestProxyQueryParametersMissing(t *testing.T) {
 	fakeQueryBody := strings.NewReader("test body")
 
 	testURLs := []string{
-		queryEndpoint,
+		"/dns-query",
 		"/not-the-right-endpoint",
-		queryEndpoint + "?targethost=",
-		queryEndpoint + "?targetpath=bar",
+		"/dns-query?targethost=",
+		"/dns-query?targetpath=bar",
 	}
-	for _, url := range testURLs {
-		request, err := http.NewRequest("POST", url, fakeQueryBody)
+	for _, testUrl := range testURLs {
+		request, err := http.NewRequest("POST", testUrl, fakeQueryBody)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -94,19 +77,19 @@ func TestProxyQueryParametersMissing(t *testing.T) {
 		handler.ServeHTTP(rr, request)
 
 		if status := rr.Code; status != http.StatusBadRequest {
-			t.Fatal(fmt.Errorf("Failed when sent invalid parameters. Expected %d, got %d", http.StatusBadRequest, status))
+			t.Fatal(fmt.Errorf("failed when sent invalid parameters. Expected %d, got %d", http.StatusBadRequest, status))
 		}
 		if proxy.lastError != errMissingTargetHost {
-			t.Fatal(fmt.Errorf("Incorrect error. Expected %s", errMissingTargetHost.Error()))
+			t.Fatal(fmt.Errorf("incorrect error, expected %s", errMissingTargetHost.Error()))
 		}
 	}
 
 	testURLs = []string{
-		queryEndpoint + "?targethost=foo",
-		queryEndpoint + "?targethost=foo&targetpath=",
+		"/dns-query?targethost=foo",
+		"/dns-query?targethost=foo&targetpath=",
 	}
-	for _, url := range testURLs {
-		request, err := http.NewRequest("POST", url, fakeQueryBody)
+	for _, testUrl := range testURLs {
+		request, err := http.NewRequest("POST", testUrl, fakeQueryBody)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -115,10 +98,10 @@ func TestProxyQueryParametersMissing(t *testing.T) {
 		handler.ServeHTTP(rr, request)
 
 		if status := rr.Code; status != http.StatusBadRequest {
-			t.Fatal(fmt.Errorf("Failed when sent invalid parameters. Expected %d, got %d", http.StatusBadRequest, status))
+			t.Fatal(fmt.Errorf("failed when sent invalid parameters. Expected %d, got %d", http.StatusBadRequest, status))
 		}
 		if proxy.lastError != errMissingTargetPath {
-			t.Fatal(fmt.Errorf("Incorrect error. Expected %s", errMissingTargetPath.Error()))
+			t.Fatal(fmt.Errorf("incorrect error, expected %s", errMissingTargetPath.Error()))
 		}
 	}
 }
@@ -129,7 +112,7 @@ func TestProxyQueryMissingBody(t *testing.T) {
 	handler := http.HandlerFunc(proxy.proxyQueryHandler)
 
 	emptyQueryBody := strings.NewReader("")
-	request, err := http.NewRequest("POST", queryEndpoint+"?targethost=foo&targetpath=bar", emptyQueryBody)
+	request, err := http.NewRequest("POST", "/dns-query?targethost=foo&targetpath=bar", emptyQueryBody)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,10 +121,10 @@ func TestProxyQueryMissingBody(t *testing.T) {
 	handler.ServeHTTP(rr, request)
 
 	if status := rr.Code; status != http.StatusBadRequest {
-		t.Fatal(fmt.Errorf("Failed when sent invalid parameters. Expected %d, got %d", http.StatusBadRequest, status))
+		t.Fatal(fmt.Errorf("failed when sent invalid parameters. Expected %d, got %d", http.StatusBadRequest, status))
 	}
 	if proxy.lastError != errEmptyRequestBody {
-		t.Fatal(fmt.Errorf("Incorrect error. Expected %s", errEmptyRequestBody.Error()))
+		t.Fatal(fmt.Errorf("incorrect error, expected %s", errEmptyRequestBody.Error()))
 	}
 }
 
@@ -153,7 +136,7 @@ func TestProxyIncorrectTarget(t *testing.T) {
 	handler := http.HandlerFunc(proxy.proxyQueryHandler)
 
 	fakeQueryBody := strings.NewReader("test body")
-	fakeQueryURL := queryEndpoint + "?targethost=nottherighttarget.com&targetpath=/"
+	fakeQueryURL := "/dns-query?targethost=nottherighttarget.com&targetpath=/"
 
 	request, err := http.NewRequest("POST", fakeQueryURL, fakeQueryBody)
 	if err != nil {
@@ -164,13 +147,16 @@ func TestProxyIncorrectTarget(t *testing.T) {
 	handler.ServeHTTP(rr, request)
 
 	if status := rr.Code; status != http.StatusInternalServerError {
-		t.Fatal(fmt.Errorf("Failed to propagate the desired error code. Expected %d, got %d", http.StatusInternalServerError, status))
+		t.Fatal(fmt.Errorf("failed to propagate the desired error code. Expected %d, got %d", http.StatusInternalServerError, status))
 	}
 }
 
 func TestProxyStatusCodePropagationOK(t *testing.T) {
 	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, "OK")
+		_, err := fmt.Fprintln(w, "OK")
+		if err != nil {
+			t.Fatal(err)
+		}
 	}))
 	defer ts.Close()
 
@@ -187,7 +173,7 @@ func TestProxyStatusCodePropagationOK(t *testing.T) {
 	handler := http.HandlerFunc(proxy.proxyQueryHandler)
 
 	fakeQueryBody := strings.NewReader("test body")
-	fakeQueryURL := queryEndpoint + "?targethost=" + testTargetURL + "&targetpath=/"
+	fakeQueryURL := "/dns-query" + "?targethost=" + testTargetURL + "&targetpath=/"
 
 	request, err := http.NewRequest("POST", fakeQueryURL, fakeQueryBody)
 	if err != nil {
@@ -198,7 +184,7 @@ func TestProxyStatusCodePropagationOK(t *testing.T) {
 	handler.ServeHTTP(rr, request)
 
 	if status := rr.Code; status != http.StatusOK {
-		t.Fatal(fmt.Errorf("Failed to propagate the desired error code. Expected %d, got %d", http.StatusOK, status))
+		t.Fatal(fmt.Errorf("failed to propagate the desired error code. Expected %d, got %d", http.StatusOK, status))
 	}
 }
 
@@ -222,7 +208,7 @@ func TestProxyStatusCodePropagationFailure(t *testing.T) {
 	handler := http.HandlerFunc(proxy.proxyQueryHandler)
 
 	fakeQueryBody := strings.NewReader("test body")
-	fakeQueryURL := queryEndpoint + "?targethost=" + testTargetURL + "&targetpath=/"
+	fakeQueryURL := "/dns-query" + "?targethost=" + testTargetURL + "&targetpath=/"
 
 	request, err := http.NewRequest("POST", fakeQueryURL, fakeQueryBody)
 	if err != nil {
@@ -233,6 +219,6 @@ func TestProxyStatusCodePropagationFailure(t *testing.T) {
 	handler.ServeHTTP(rr, request)
 
 	if status := rr.Code; status != expectedFailure {
-		t.Fatal(fmt.Errorf("Failed to propagate the desired error code. Expected %d, got %d", expectedFailure, status))
+		t.Fatal(fmt.Errorf("failed to propagate the desired error code. Expected %d, got %d", expectedFailure, status))
 	}
 }
